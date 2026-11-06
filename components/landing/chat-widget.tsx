@@ -8,44 +8,65 @@ import { cn } from "@/lib/utils";
 interface Message {
   from: "bot" | "user";
   text: string;
+  // Tin báo lỗi chỉ để hiển thị, không gửi lại cho Gemini trong lịch sử hội thoại.
+  isError?: boolean;
 }
 
 const quickQuestions = [
   "Dịch vụ này gồm những gì?",
-  "Bao lâu thì có kết quả xét duyệt?",
+  "Mất bao lâu để có kết quả?",
   "Chi phí dịch vụ là bao nhiêu?",
-  "Tôi cần chuẩn bị giấy tờ gì?",
+  "Cần chuẩn bị giấy tờ gì?",
 ];
-
-const cannedAnswers: Record<string, string> = {
-  "Dịch vụ này gồm những gì?":
-    "Bên mình lo phần đối chiếu điểm chuẩn, kiểm tra hồ sơ và tư vấn chọn trường, chia làm 2 gói: Cơ bản và Toàn diện.",
-  "Bao lâu thì có kết quả xét duyệt?":
-    "Nộp đủ giấy tờ là có kết quả đối chiếu điểm chuẩn ngay. Sau đó tư vấn viên sẽ gọi xác nhận lại với bạn trong vòng 24h.",
-  "Chi phí dịch vụ là bao nhiêu?":
-    "Gói Cơ bản 18.000.000₫, gói Toàn diện 45.000.000₫ nhé. Bạn kéo lên phần báo giá phía trên để xem chi tiết quyền lợi từng gói.",
-  "Tôi cần chuẩn bị giấy tờ gì?":
-    "3 thứ thôi: bảng điểm (PDF), ảnh chứng chỉ IELTS, và ảnh CMND/CCCD hoặc hộ chiếu.",
-};
 
 const initialMessages: Message[] = [
   { from: "bot", text: "Chào bạn! Mình là trợ lý ảo của DuHoc24, bạn cần hỗ trợ gì về hồ sơ du học?" },
 ];
 
+const errorText = "Xin lỗi, mình chưa trả lời được lúc này. Bạn vui lòng thử lại sau ít phút nhé.";
+
 export function ChatWidget() {
   const [open, setOpen] = React.useState(false);
   const [messages, setMessages] = React.useState<Message[]>(initialMessages);
   const [input, setInput] = React.useState("");
+  const [pending, setPending] = React.useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  function sendMessage(text: string) {
-    if (!text.trim()) return;
-    const answer = cannedAnswers[text];
-    setMessages((prev) => [
-      ...prev,
-      { from: "user", text },
-      ...(answer ? [{ from: "bot" as const, text: answer }] : []),
-    ]);
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, pending, open]);
+
+  async function sendMessage(rawText: string) {
+    const text = rawText.trim();
+    if (!text || pending) return;
+
+    const nextMessages: Message[] = [...messages, { from: "user", text }];
+    setMessages(nextMessages);
     setInput("");
+    setPending(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: nextMessages
+            .slice(initialMessages.length)
+            .filter((m) => !m.isError)
+            .map(({ from, text }) => ({ from, text })),
+        }),
+      });
+      if (!res.ok) throw new Error(`Chat API trả về ${res.status}`);
+
+      const data: { reply: string } = await res.json();
+      setMessages((prev) => [...prev, { from: "bot", text: data.reply }]);
+    } catch (error) {
+      console.error(error);
+      setMessages((prev) => [...prev, { from: "bot", text: errorText, isError: true }]);
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
@@ -55,7 +76,7 @@ export function ChatWidget() {
           <div className="flex items-center justify-between border-b bg-primary px-4 py-3 text-primary-foreground">
             <div>
               <p className="text-sm font-medium">Hỏi đáp nhanh</p>
-              <p className="text-xs opacity-80">Thường trả lời trong vài phút</p>
+              <p className="text-xs opacity-80">Trợ lý tư vấn du học</p>
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -66,7 +87,7 @@ export function ChatWidget() {
             </button>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
             {messages.map((m, i) => (
               <div
                 key={i}
@@ -74,7 +95,7 @@ export function ChatWidget() {
               >
                 <div
                   className={cn(
-                    "max-w-[85%] rounded-2xl px-3.5 py-2 text-sm",
+                    "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm",
                     m.from === "user"
                       ? "rounded-br-sm bg-primary text-primary-foreground"
                       : "rounded-bl-sm bg-muted text-foreground",
@@ -84,6 +105,13 @@ export function ChatWidget() {
                 </div>
               </div>
             ))}
+            {pending && (
+              <div className="flex justify-start">
+                <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm text-muted-foreground">
+                  Đang trả lời...
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-t p-3">
@@ -92,7 +120,8 @@ export function ChatWidget() {
                 <button
                   key={q}
                   onClick={() => sendMessage(q)}
-                  className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground duration-150 hover:border-primary hover:text-primary"
+                  disabled={pending}
+                  className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground duration-150 hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-50"
                 >
                   {q}
                 </button>
@@ -108,10 +137,11 @@ export function ChatWidget() {
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                maxLength={1000}
                 placeholder="Nhập câu hỏi của bạn..."
                 className="h-9 flex-1 rounded-full border border-input bg-transparent px-3.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
-              <Button type="submit" size="icon" className="shrink-0" aria-label="Gửi">
+              <Button type="submit" size="icon" className="shrink-0" aria-label="Gửi" disabled={pending}>
                 <Send className="size-4" />
               </Button>
             </form>
