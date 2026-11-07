@@ -1,6 +1,6 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
-import { chatSystemInstruction } from "@/lib/chat-qna";
+import { chatSystemInstruction } from "@/lib/chat-prompt";
 import type { StoredMessage } from "@/lib/chat-store";
 
 const MODEL = "gemini-3.5-flash-lite";

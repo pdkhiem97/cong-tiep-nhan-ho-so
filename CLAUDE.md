@@ -41,7 +41,7 @@ Conversation data is private. `conversations` and `messages` have RLS on with **
 
 `/admin/conversations` and `/admin/conversations/[id]` show the real conversations, read through `lib/chat-store.ts`. They sit behind HTTP Basic Auth (user `admin`, password `ADMIN_PASSWORD`), checked in `proxy.ts` and again in each page via `lib/admin-auth.ts`. Any new page, route, or Server Action that touches conversations needs the same check. In particular, `deleteConversationAction` (`app/admin/conversations/actions.ts`) checks for itself, because Server Actions accept direct POSTs. Deleting is permanent and cascades to the messages. This is a stopgap until the Week 6 login.
 
-The bot may only answer from the Q&A set in `lib/chat-qna.ts`, enforced by the system instruction there; edit answers in that file. The chat routes have no rate limiting.
+The bot's behavior comes from the system prompt in `lib/chat-prompt.ts`: it leads a lead-capture flow (country → level and major → service → name, email, phone → invite to a free consultation). Nothing acts on that flow. Contact details only end up as message text, and there is no booking or notification, so staff must read them in `/admin/conversations`. The chat routes have no rate limiting.
 
 **Other interactions are simulated.** Expect these to look more functional than they are:
 - `QuoteForm` only sets local state on submit and shows a "quote sent" message. Nothing is saved or emailed.
@@ -61,7 +61,7 @@ The bot may only answer from the Q&A set in `lib/chat-qna.ts`, enforced by the s
 
 - The README roadmap mentions `/schools`, but the only schools route is `/admin/schools`.
 - The README still describes the repo as UI-only, with the Week 2 chatbot items unticked.
-- The chatbot's Q&A describes the packages differently from `servicePackages` in `lib/mock-data.ts`, and says price depends on degree level, while `QuoteForm` prices by package only.
+- The chatbot's prompt lists services but no prices or packages, while `servicePackages` in `lib/mock-data.ts` and `QuoteForm` use fixed packages. The `quickQuestions` in `ChatWidget` were written for the old Q&A prompt.
 
 ## Quy tắc Git
 
