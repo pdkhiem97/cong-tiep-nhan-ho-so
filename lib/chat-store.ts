@@ -103,3 +103,84 @@ export async function getMessages(conversationId: string): Promise<StoredMessage
   if (error) throw new Error(error.message);
   return data.map((row) => ({ id: row.id, from: row.sender, text: row.content }));
 }
+
+// Các hàm dưới đây chỉ dành cho trang quản trị: đọc được hội thoại của mọi khách.
+
+export const ADMIN_CONVERSATIONS_PAGE_SIZE = 50;
+
+export interface ConversationSummary {
+  id: string;
+  createdAt: string;
+  messageCount: number;
+  firstMessage: string | null;
+}
+
+export interface ConversationDetail {
+  id: string;
+  createdAt: string;
+  messages: (StoredMessage & { createdAt: string })[];
+}
+
+interface ConversationSummaryRow {
+  id: string;
+  created_at: string;
+  messages: { count: number }[];
+  first_message: { content: string }[];
+}
+
+interface ConversationDetailRow {
+  id: string;
+  created_at: string;
+  messages: (MessageRow & { created_at: string })[];
+}
+
+export async function listConversations(page: number) {
+  const from = (page - 1) * ADMIN_CONVERSATIONS_PAGE_SIZE;
+  const { data, error, count } = await getClient()
+    .from("conversations")
+    .select("id, created_at, messages(count), first_message:messages(content)", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .order("id", { referencedTable: "first_message", ascending: true })
+    .limit(1, { referencedTable: "first_message" })
+    .range(from, from + ADMIN_CONVERSATIONS_PAGE_SIZE - 1)
+    .returns<ConversationSummaryRow[]>();
+
+  // PGRST103: số trang vượt quá dữ liệu hiện có.
+  if (error?.code === "PGRST103") return { conversations: [], total: null };
+  if (error) throw new Error(error.message);
+
+  const conversations: ConversationSummary[] = data.map((row) => ({
+    id: row.id,
+    createdAt: row.created_at,
+    messageCount: row.messages[0]?.count ?? 0,
+    firstMessage: row.first_message[0]?.content ?? null,
+  }));
+  return { conversations, total: count };
+}
+
+export async function getConversationDetail(id: string): Promise<ConversationDetail | null> {
+  if (!UUID_PATTERN.test(id)) return null;
+
+  const { data, error } = await getClient()
+    .from("conversations")
+    .select("id, created_at, messages(id, sender, content, created_at)")
+    .eq("id", id)
+    .order("id", { referencedTable: "messages", ascending: true })
+    .returns<ConversationDetailRow[]>()
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const row = data as ConversationDetailRow;
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    messages: row.messages.map((m) => ({
+      id: m.id,
+      from: m.sender,
+      text: m.content,
+      createdAt: m.created_at,
+    })),
+  };
+}
