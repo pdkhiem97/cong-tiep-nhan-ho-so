@@ -159,7 +159,90 @@ export async function listConversations(page: number) {
   return { conversations, total: count };
 }
 
-// Xoá hội thoại và toàn bộ tin nhắn của nó (khoá ngoại on delete cascade). Không khôi phục được.
+export const LEAD_QUALITIES = ["good", "ok", "spam"] as const;
+
+export interface LeadFields {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  country: string | null;
+  studyLevel: string | null;
+  major: string | null;
+  availability: string | null;
+  wantsConsultation: boolean | null;
+  note: string | null;
+  quality: (typeof LEAD_QUALITIES)[number];
+}
+
+export interface Lead extends LeadFields {
+  extractedAt: string;
+}
+
+interface LeadRow {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  country: string | null;
+  study_level: string | null;
+  major: string | null;
+  availability: string | null;
+  wants_consultation: boolean | null;
+  note: string | null;
+  quality: LeadFields["quality"];
+  extracted_at: string;
+}
+
+export async function getLead(conversationId: string): Promise<Lead | null> {
+  if (!UUID_PATTERN.test(conversationId)) return null;
+
+  const { data, error } = await getClient()
+    .from("leads")
+    .select(
+      "name, email, phone, country, study_level, major, availability, wants_consultation, note, quality, extracted_at",
+    )
+    .eq("conversation_id", conversationId)
+    .maybeSingle<LeadRow>();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  return {
+    name: data.name,
+    email: data.email,
+    phone: data.phone,
+    country: data.country,
+    studyLevel: data.study_level,
+    major: data.major,
+    availability: data.availability,
+    wantsConsultation: data.wants_consultation,
+    note: data.note,
+    quality: data.quality,
+    extractedAt: data.extracted_at,
+  };
+}
+
+// Mỗi hội thoại có một lead; trích xuất lại thì ghi đè kết quả cũ.
+export async function saveLead(conversationId: string, lead: LeadFields) {
+  const { error } = await getClient().from("leads").upsert(
+    {
+      conversation_id: conversationId,
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      country: lead.country,
+      study_level: lead.studyLevel,
+      major: lead.major,
+      availability: lead.availability,
+      wants_consultation: lead.wantsConsultation,
+      note: lead.note,
+      quality: lead.quality,
+      extracted_at: new Date().toISOString(),
+    },
+    { onConflict: "conversation_id" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+// Xoá hội thoại cùng tin nhắn và lead của nó (khoá ngoại on delete cascade). Không khôi phục được.
 export async function deleteConversation(id: string) {
   if (!UUID_PATTERN.test(id)) return;
 

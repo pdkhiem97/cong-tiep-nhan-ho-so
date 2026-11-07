@@ -3,10 +3,11 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DeleteConversationButton } from "@/components/admin/delete-conversation-button";
+import { LeadPanel } from "@/components/admin/lead-panel";
 import { AdminPageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { isAdminAuthorized } from "@/lib/admin-auth";
-import { getConversationDetail } from "@/lib/chat-store";
+import { getConversationDetail, getLead } from "@/lib/chat-store";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "../format";
 
@@ -19,7 +20,7 @@ export default async function AdminConversationDetailPage({
   if (!isAdminAuthorized((await headers()).get("authorization"))) notFound();
 
   const { id } = await params;
-  const conversation = await getConversationDetail(id);
+  const [conversation, lead] = await Promise.all([getConversationDetail(id), getLead(id)]);
   if (!conversation) notFound();
 
   return (
@@ -36,6 +37,12 @@ export default async function AdminConversationDetailPage({
         title="Chi tiết hội thoại"
         description={`Bắt đầu lúc ${formatDateTime(conversation.createdAt)}, ${conversation.messages.length} tin nhắn.`}
         action={<DeleteConversationButton conversationId={conversation.id} />}
+      />
+
+      <LeadPanel
+        conversationId={conversation.id}
+        lead={lead}
+        lastMessageAt={conversation.messages.at(-1)?.createdAt ?? null}
       />
 
       <Card>
