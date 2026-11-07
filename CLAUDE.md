@@ -39,7 +39,7 @@ The chatbot needs `GEMINI_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` in
 
 Conversation data is private. `conversations` and `messages` have RLS on with **deliberately no policies**, and `anon`/`authenticated` privileges are revoked, so only the server's secret key can reach them. Never add a browser Supabase client or a public policy for these tables. Visitors are identified by the `duhoc24_chat_id` httpOnly cookie, never by an id in the request body. Schema changes go in `supabase/migrations/`.
 
-`/admin/conversations` and `/admin/conversations/[id]` show the real conversations, read through `lib/chat-store.ts`. They sit behind HTTP Basic Auth (user `admin`, password `ADMIN_PASSWORD`), checked in `proxy.ts` and again in each page via `lib/admin-auth.ts`. Any new page or route that reads conversations needs the same check. This is a stopgap until the Week 6 login.
+`/admin/conversations` and `/admin/conversations/[id]` show the real conversations, read through `lib/chat-store.ts`. They sit behind HTTP Basic Auth (user `admin`, password `ADMIN_PASSWORD`), checked in `proxy.ts` and again in each page via `lib/admin-auth.ts`. Any new page, route, or Server Action that touches conversations needs the same check. In particular, `deleteConversationAction` (`app/admin/conversations/actions.ts`) checks for itself, because Server Actions accept direct POSTs. Deleting is permanent and cascades to the messages. This is a stopgap until the Week 6 login.
 
 The bot may only answer from the Q&A set in `lib/chat-qna.ts`, enforced by the system instruction there; edit answers in that file. The chat routes have no rate limiting.
 

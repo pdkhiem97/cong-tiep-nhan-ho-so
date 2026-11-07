@@ -2,6 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeleteConversationButton } from "@/components/admin/delete-conversation-button";
 import { AdminPageHeader } from "@/components/admin/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { isAdminAuthorized } from "@/lib/admin-auth";
@@ -34,6 +35,7 @@ export default async function AdminConversationDetailPage({
       <AdminPageHeader
         title="Chi tiết hội thoại"
         description={`Bắt đầu lúc ${formatDateTime(conversation.createdAt)}, ${conversation.messages.length} tin nhắn.`}
+        action={<DeleteConversationButton conversationId={conversation.id} />}
       />
 
       <Card>

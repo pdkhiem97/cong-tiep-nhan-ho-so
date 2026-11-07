@@ -159,6 +159,14 @@ export async function listConversations(page: number) {
   return { conversations, total: count };
 }
 
+// Xoá hội thoại và toàn bộ tin nhắn của nó (khoá ngoại on delete cascade). Không khôi phục được.
+export async function deleteConversation(id: string) {
+  if (!UUID_PATTERN.test(id)) return;
+
+  const { error } = await getClient().from("conversations").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 export async function getConversationDetail(id: string): Promise<ConversationDetail | null> {
   if (!UUID_PATTERN.test(id)) return null;
 
