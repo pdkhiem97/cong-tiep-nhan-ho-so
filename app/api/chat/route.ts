@@ -1,77 +1,40 @@
-import { GoogleGenAI } from "@google/genai";
-import { chatSystemInstruction } from "@/lib/chat-qna";
+import {
+  addMessage,
+  ensureConversationId,
+  getMessages,
+  readConversationId,
+} from "@/lib/chat-store";
 
-const MODEL = "gemini-3.5-flash-lite";
-const MAX_HISTORY_MESSAGES = 20;
-const MAX_MESSAGE_LENGTH = 2000;
-const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_MESSAGE_LENGTH = 1000;
 
-interface ChatTurn {
-  from: "bot" | "user";
-  text: string;
+// Lấy hội thoại của khách hiện tại từ database.
+export async function GET() {
+  const conversationId = await readConversationId();
+  if (!conversationId) return Response.json({ messages: [] });
+
+  try {
+    return Response.json({ messages: await getMessages(conversationId) });
+  } catch (error) {
+    console.error("Chat API: không đọc được hội thoại:", error);
+    return Response.json({ error: "Không tải được hội thoại." }, { status: 500 });
+  }
 }
 
-function isChatTurn(value: unknown): value is ChatTurn {
-  if (typeof value !== "object" || value === null) return false;
-  const { from, text } = value as Record<string, unknown>;
-  return (
-    (from === "bot" || from === "user") &&
-    typeof text === "string" &&
-    text.trim().length > 0 &&
-    text.length <= MAX_MESSAGE_LENGTH
-  );
-}
-
-// Trả về lịch sử hợp lệ, bắt đầu bằng tin của khách và kết thúc bằng câu hỏi mới nhất.
-function parseHistory(body: unknown): ChatTurn[] | null {
-  const messages = (body as { messages?: unknown } | null)?.messages;
-  if (!Array.isArray(messages)) return null;
-
-  const recent = messages.slice(-MAX_HISTORY_MESSAGES);
-  if (!recent.every(isChatTurn)) return null;
-  if (recent.at(-1)?.from !== "user") return null;
-
-  return recent.slice(recent.findIndex((m) => m.from === "user"));
-}
-
+// Lưu câu hỏi và cấp cookie ngay, chưa gọi Gemini. Nhờ vậy khách đóng tab hay tải lại trang
+// trong lúc bot đang trả lời thì vẫn tìm lại được hội thoại. Câu trả lời do /api/chat/reply tạo.
 export async function POST(request: Request) {
-  const body: unknown = await request.json().catch(() => null);
-  const history = parseHistory(body);
-  if (!history) {
+  const body = (await request.json().catch(() => null)) as { text?: unknown } | null;
+  const text = typeof body?.text === "string" ? body.text.trim() : "";
+  if (!text || text.length > MAX_MESSAGE_LENGTH) {
     return Response.json({ error: "Tin nhắn không hợp lệ." }, { status: 400 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("Chat API: thiếu GEMINI_API_KEY");
-    return Response.json({ error: "Chatbot chưa được cấu hình." }, { status: 500 });
-  }
-
   try {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { timeout: REQUEST_TIMEOUT_MS },
-    });
-    const response = await ai.models.generateContent({
-      model: MODEL,
-      contents: history.map((m) => ({
-        role: m.from === "user" ? "user" : "model",
-        parts: [{ text: m.text }],
-      })),
-      config: {
-        systemInstruction: chatSystemInstruction,
-        temperature: 0,
-      },
-    });
-
-    const reply = response.text?.trim();
-    if (!reply) {
-      console.error("Chat API: Gemini không trả về nội dung", response.candidates?.[0]?.finishReason);
-      return Response.json({ error: "Không nhận được câu trả lời." }, { status: 502 });
-    }
-    return Response.json({ reply });
+    const conversationId = await ensureConversationId();
+    await addMessage(conversationId, "user", text);
+    return Response.json({ messages: await getMessages(conversationId) });
   } catch (error) {
-    console.error("Chat API: lỗi khi gọi Gemini:", error instanceof Error ? error.message : error);
-    return Response.json({ error: "Không thể kết nối tới chatbot." }, { status: 502 });
+    console.error("Chat API: không lưu được tin nhắn:", error);
+    return Response.json({ error: "Không lưu được tin nhắn." }, { status: 500 });
   }
 }
